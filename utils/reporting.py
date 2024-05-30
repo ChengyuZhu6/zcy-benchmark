@@ -48,7 +48,7 @@ def extract_metrics(execution_params, warm_up_lines):
 
 
 def update_metrics(execution_params, metrics):
-    if execution_params["handler_profiling"]:
+    if "handler_profiling" in execution_params and execution_params["handler_profiling"]:
         opt_metrics = {
             "handler_preprocess.txt": "ts_handler_preprocess",
             "handler_inference.txt": "ts_handler_inference",
@@ -60,17 +60,9 @@ def update_metrics(execution_params, metrics):
 def generate_csv_output(execution_params, metrics, artifacts):
     click.secho("*Generating CSV output...", fg="green")
 
-    artifacts["Batch size"] = execution_params["batch_size"]
-    artifacts["Batch delay"] = execution_params["batch_delay"]
-    artifacts["Workers"] = execution_params["workers"]
-    artifacts["Model"] = "[.mar]({})".format(execution_params["url"])
-    artifacts["Concurrency"] = execution_params["concurrency"]
-    artifacts["Input"] = "[input]({})".format(execution_params["input"])
-    artifacts["Requests"] = execution_params["requests"]
+    # torchserve_artifacts = extract_torchserve_artifacts(execution_params, metrics)
 
-    torchserve_artifacts = extract_torchserve_artifacts(execution_params, metrics)
-
-    artifacts.update(torchserve_artifacts)
+    # artifacts.update(torchserve_artifacts)
 
     click.secho(f"Saving benchmark results to {execution_params['report_location']}")
 
@@ -85,47 +77,18 @@ def generate_csv_output(execution_params, metrics, artifacts):
     return artifacts
 
 
-def extract_ab_tool_benchmark_artifacts(execution_params):
-    artifacts = {}
-
-    with open(execution_params["result_file"]) as f:
-        data = f.readlines()
-
-    artifacts["Benchmark"] = "AB"
-    artifacts["TS failed requests"] = extract_entity(data, "Failed requests:", -1)
-    artifacts["TS throughput"] = extract_entity(data, "Requests per second:", -3)
-    artifacts["TS latency P50"] = extract_entity(data, "50%", -1)
-    artifacts["TS latency P90"] = extract_entity(data, "90%", -1)
-    artifacts["TS latency P99"] = extract_entity(data, "99%", -1)
-    artifacts["TS latency mean"] = extract_entity(data, "Time per request:.*mean\)", -3)
-    if isinstance(artifacts["TS failed requests"], type(None)):
-        artifacts["TS error rate"] = 0.0
-    else:
-        artifacts["TS error rate"] = (
-            int(artifacts["TS failed requests"]) / execution_params["requests"] * 100
-        )
-    return artifacts
-
-
 def extract_locust_tool_benchmark_artifacts(execution_params):
     with open(execution_params["result_file"], "r") as f:
         data = json.load(f)[0]
 
     response_hist = dict(sorted(data["response_times"].items()))
-    keys = [int(k) for k in response_hist.keys()]
+    keys = [float(k) for k in response_hist.keys()]
     values = [v for v in response_hist.values()]
     artifacts = {"Benchmark": "Locust"}
     artifacts["TS failed requests"] = data["num_failures"]
     artifacts["TS throughput"] = data["num_requests"] / max(
         data["last_request_timestamp"] - data["start_time"], 0.1
     )
-    for p in [50, 90, 99]:
-        idx = min(
-            np.searchsorted(values, np.percentile(values, p), side="left"),
-            len(values) - 1,
-        )
-        p_key = keys[idx]
-        artifacts[f"TS latency P{p}"] = p_key
     artifacts["TS latency mean"] = np.multiply(keys, values).sum() / np.sum(values)
     artifacts["TS error rate"] = data["num_failures"] / data["num_requests"] * 100
 

@@ -75,6 +75,8 @@ class Benchmark(ABC):
         shutil.copyfile(
             input, os.path.join(self.execution_params["tmp_dir"], "benchmark", "input")
         )
+        with open(self.execution_params["metric_log"], 'w') as file:
+            pass
 
     @abstractmethod
     def _extract_benchmark_artifacts(self):
@@ -103,7 +105,7 @@ class LocustBenchmark(Benchmark):
             f"locust  -H {self.execution_params['url']} --locustfile {self.locust_benchmark_file} "
             f"--headless --reset-stats -u {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
             f"--input {self.execution_params['tmp_dir']}/benchmark/input --content-type  {self.execution_params['content_type']} "
-            f"--model-url {self.execution_params['inference_model_url']} --custom-header {self.execution_params['custom_header']} "
+            f"--model-url {self.execution_params['inference_model_url']} --custom-header {self.execution_params['custom_header']} --logfile {self.execution_params['output_log']} "
             f"--json > {self.execution_params['result_file']}"
         )
         click.secho("\n\nExecuting inference performance tests ...", fg="green")

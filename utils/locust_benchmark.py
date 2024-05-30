@@ -26,6 +26,7 @@ class MyUser(HttpUser):
         if response.status_code != 200:
             logging.error("Request failed")
         assert response.status_code == 200
+        logging.info(f"response info = {response.json()}")
 
 
 @events.init_command_line_parser.add_listener

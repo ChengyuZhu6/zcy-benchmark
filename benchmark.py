@@ -106,6 +106,9 @@ def update_exec_params(execution_params, input_param):
     execution_params["metric_log"] = os.path.join(
         execution_params["tmp_dir"], "benchmark", "logs", "model_metrics.log"
     )
+    execution_params["output_log"] = os.path.join(
+        execution_params["tmp_dir"], "benchmark", "logs", "output_log.log"
+    )
 
 
 if __name__ == "__main__":
