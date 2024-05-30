@@ -1,0 +1,22 @@
+apiVersion: "serving.kserve.io/v1beta1"
+kind: "InferenceService"
+metadata:
+  name: "llmtorch"
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: torchserveipex
+      storageUri: "pvc://pv-volume-llm-torch/"
+      resources:
+        limits:
+          cpu: "24"
+          memory: 32Gi
+        requests:
+          cpu: "24"
+          memory: 32Gi
+      env:
+      - name: OMP_NUM_THREADS
+        value: "24"
