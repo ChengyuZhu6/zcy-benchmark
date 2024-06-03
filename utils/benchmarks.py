@@ -90,7 +90,7 @@ class LocustBenchmark(Benchmark):
     def warm_up(self):
         locust_cmd = (
             f"locust -H {self.execution_params['url']} --locustfile {self.locust_benchmark_file} "
-            f"--headless --reset-stats -u {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
+            f"--headless --reset-stats --users {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
             f"--input {self.execution_params['tmp_dir']}/benchmark/input --content-type  {self.execution_params['content_type']} "
             f"--model-url {self.execution_params['inference_model_url']} --custom-header {self.execution_params['custom_header']} "
         )
@@ -103,7 +103,7 @@ class LocustBenchmark(Benchmark):
     def run(self):
         locust_cmd = (
             f"locust  -H {self.execution_params['url']} --locustfile {self.locust_benchmark_file} "
-            f"--headless --reset-stats -u {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
+            f"--headless --reset-stats --users {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
             f"--input {self.execution_params['tmp_dir']}/benchmark/input --content-type  {self.execution_params['content_type']} "
             f"--model-url {self.execution_params['inference_model_url']} --custom-header {self.execution_params['custom_header']} --logfile {self.execution_params['output_log']} "
             f"--json > {self.execution_params['result_file']}"

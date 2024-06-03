@@ -1,32 +1,40 @@
 import logging
+import gevent.pool
+from locust import FastHttpUser, events, task
 
-from locust import HttpUser, events, task
-
-
-class MyUser(HttpUser):
+class MyUser(FastHttpUser):
     data = None
-
+    network_timeout = 500.0  # Timeout for the network operations, in seconds
+    connection_timeout = 500.0  # Timeout for establishing a connection, in seconds
+    
     def on_start(self):
         with open(self.environment.parsed_options.input, "rb") as f:
             self.data = f.read()
+        # logging.info("options = %s", self.environment.parsed_options)
 
     @task
     def my_task(self):
+        def concurrent_request(url,data,headers):
+            response = self.client.post(
+            url=url,
+            data=self.data,
+            headers=headers
+            )
+            if response.status_code != 200:
+                logging.error("Request failed")
+            assert response.status_code == 200
+            logging.info(f"response info = {response.json()}")
+        
         target_url=f"{self.environment.parsed_options.host}/{self.environment.parsed_options.model_url}"
         logging.info("Request host = %s", target_url)
         headers = {
             "Host": self.environment.parsed_options.custom_header,
             "Content-type": self.environment.parsed_options.content_type,
         }
-        response = self.client.post(
-            url=target_url,
-            data=self.data,
-            headers=headers
-        )
-        if response.status_code != 200:
-            logging.error("Request failed")
-        assert response.status_code == 200
-        logging.info(f"response info = {response.json()}")
+        pool = gevent.pool.Pool(self.environment.parsed_options.num_users)
+        for _ in range(self.environment.parsed_options.num_users):  
+            pool.spawn(concurrent_request, target_url,self.data,headers)
+        pool.join()
 
 
 @events.init_command_line_parser.add_listener
