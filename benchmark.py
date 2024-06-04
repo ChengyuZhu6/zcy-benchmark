@@ -24,6 +24,12 @@ def json_provider(file_path, cmd_name):
 )
 @click.option("--requests", "-r", default=100, help="Number of requests")
 @click.option(
+    "--run_time",
+    "-rt",
+    default=-1,
+    help=f"run time.",
+)
+@click.option(
     "--input",
     "-i",
     default="../examples/image_classifier/kitten.jpg",

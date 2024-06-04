@@ -31,15 +31,18 @@ class LlmClassifier(BaseHandler):
         )
         logger.info("Initialize: Start to load model")
 
-        self.tokenizer = LlamaTokenizer.from_pretrained(
-            model_dir, trust_remote_code=True
-        )
-        self.model = (
-            AutoModelForCausalLM.from_pretrained(
-                model_dir, torch_dtype=torch.bfloat16, trust_remote_code=True
-            )
-            .eval()
-            .to(self.device)
+        amp_dtype = getattr(torch, "bfloat16")
+        self.tokenizer = LlamaTokenizer.from_pretrained(model_dir)
+        model = AutoModelForCausalLM.from_pretrained(model_dir, low_cpu_mem_usage=True).to(self.device)
+        model.config.use_cache = True
+        model.config.lm_head_generation = True
+        model = model.to(memory_format=torch.channels_last)
+
+        self.model = ipex.llm.optimize(
+            model.eval(),
+            dtype=amp_dtype,
+            inplace=True,
+            deployment_mode=False,
         )
         logger.info("Initialize: model loaded")
 
@@ -68,51 +71,71 @@ class LlmClassifier(BaseHandler):
 
     def inference(self, inputs):
         prompt = inputs
-        input_ids = self.tokenizer.encode(prompt, return_tensors='pt')
+        input_ids = self.tokenizer(prompt, return_tensors='pt')
 
         logging.info("llm inference get inputs")
         logging.info(input_ids)
-        output_ids = []
         first_token_latency=0
         is_first_token=False
         all_token_latency=0
-        for _ in range(self.max_length):
-            start_time = time.perf_counter()
-            with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(
-                enabled=True
-            ):
-                # output_ids = self.model.generate(**inputs)
-                logging.info("llm inference get output_ids")
-                output = self.model(input_ids)
-
-            next_token_logits = output.logits[:, -1, :]
-            next_token = torch.argmax(next_token_logits, dim=-1)
-            output_ids.append(next_token.item())
-            logging.info("llm inference get next_token")
-            logging.info(next_token)
-            next_token_output = self.tokenizer.decode([next_token.item()])
-            logging.info(next_token_output)
-            end_time = time.perf_counter()
-            time_cost_milliseconds = (end_time - start_time) * 1000
-            if is_first_token == False:
-                first_token_latency = time_cost_milliseconds
-                is_first_token=True
-            all_token_latency = all_token_latency + time_cost_milliseconds
-            print(f"Single token {time_cost_milliseconds:.2f} milliseconds.")
-            # Update the input_ids to include the new token
-            input_ids = torch.cat((input_ids, next_token.unsqueeze(0)), dim=1)
-            
-            # Check if the next_token is the end of sentence token
-            if next_token.item() == self.tokenizer.eos_token_id:
-                break
-        decoded_output = self.tokenizer.decode(output_ids)
-        average_latency = float(all_token_latency)/float(len(output_ids))
-        logging.info("all tokens llm inference result:")
-        logging.info(decoded_output)
-        logging.info(f"first_token_latency {first_token_latency:.2f}")
-        logging.info(f"average_latency {average_latency:.2f}")
+        skip_special_tokens=True
+        clean_up_tokenization_spaces=False
+        spaces_between_special_tokens=True
+        with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(
+            enabled=True
+        ):
+            logging.info("llm inference get output_ids")
+            output_ids = self.model.generate(**input_ids, max_length = self.max_length)
+            filtered_tokens=[]
+            for output_id in output_ids:
+                added_vocab = self.tokenizer.get_added_vocab()
+                for out_id in output_id:
+                    start_time = time.perf_counter()
+                    id_to_token=self.tokenizer.convert_ids_to_tokens([out_id], skip_special_tokens=skip_special_tokens)
+                    logging.info(id_to_token)
+                    if len(id_to_token) > 0:
+                        filtered_tokens.append(id_to_token[0])
+                    end_time = time.perf_counter()
+                    time_cost_milliseconds = (end_time - start_time) * 1000
+                    if is_first_token == False:
+                        first_token_latency = time_cost_milliseconds
+                        is_first_token=True
+                    all_token_latency = all_token_latency + time_cost_milliseconds
+                    print(f"Single token {time_cost_milliseconds:.2f} milliseconds.")
+                # filtered_tokens = self.tokenizer.convert_ids_to_tokens(output_id, skip_special_tokens=skip_special_tokens)
+                legacy_added_tokens = set(added_vocab.keys()) - set(self.tokenizer.all_special_tokens) | {
+                    token for token in self.tokenizer.additional_special_tokens if self.tokenizer.convert_tokens_to_ids(token) >= self.tokenizer.vocab_size
+                }
+                
+                sub_texts = []
+                current_sub_text = []
+                for token in filtered_tokens:
+                    if skip_special_tokens and token in self.tokenizer.all_special_ids:
+                        continue
+                    
+                    if token in legacy_added_tokens:
+                        if current_sub_text:
+                            string = self.tokenizer.convert_tokens_to_string(current_sub_text)
+                            if len(string) > 0:
+                                sub_texts.append(string)
+                            current_sub_text = []
+                        sub_texts.append(token)
+                    else:
+                        current_sub_text.append(token)
+                if current_sub_text:
+                    sub_texts.append(self.tokenizer.convert_tokens_to_string(current_sub_text))
+                if spaces_between_special_tokens:
+                    text = " ".join(sub_texts)
+                else:
+                    text = "".join(sub_texts)
+                    
+                average_latency = float(all_token_latency)/float(len(filtered_tokens))
+                logging.info("all tokens llm inference result:")
+                logging.info(text)
+                logging.info(f"first_token_latency {first_token_latency:.2f}")
+                logging.info(f"average_latency {average_latency:.2f}")
         return {
-            "output": decoded_output,
+            "output": text,
             "first_token_latency": first_token_latency,
             "average_latency": average_latency,
         }
