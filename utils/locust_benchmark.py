@@ -1,40 +1,42 @@
 import logging
 import gevent.pool
-from locust import FastHttpUser, events, task
+from locust import FastHttpUser, events, task ,between
 
 class MyUser(FastHttpUser):
-    data = None
     network_timeout = 500.0  # Timeout for the network operations, in seconds
     connection_timeout = 500.0  # Timeout for establishing a connection, in seconds
-    
+    pool_size = 50
+    pool = None
+    url = ""
+    headers = {}
+
     def on_start(self):
         with open(self.environment.parsed_options.input, "rb") as f:
             self.data = f.read()
-        # logging.info("options = %s", self.environment.parsed_options)
-
-    @task
-    def my_task(self):
-        def concurrent_request(url,data,headers):
-            response = self.client.post(
-            url=url,
-            data=self.data,
-            headers=headers
-            )
-            if response.status_code != 200:
-                logging.error("Request failed")
-            assert response.status_code == 200
-            logging.info(f"response info = {response.json()}")
-        
-        target_url=f"{self.environment.parsed_options.host}/{self.environment.parsed_options.model_url}"
-        logging.info("Request host = %s", target_url)
-        headers = {
+        self.pool = gevent.pool.Pool(self.pool_size)
+        self.url = f"{self.environment.parsed_options.host}/{self.environment.parsed_options.model_url}"
+        self.headers = {
             "Host": self.environment.parsed_options.custom_header,
             "Content-type": self.environment.parsed_options.content_type,
         }
-        pool = gevent.pool.Pool(self.environment.parsed_options.num_users)
-        for _ in range(self.environment.parsed_options.num_users):  
-            pool.spawn(concurrent_request, target_url,self.data,headers)
-        pool.join()
+
+    @task
+    def my_task(self):
+        self.pool.spawn(self.concurrent_request)
+        self.pool.join()
+
+    def concurrent_request(self):
+        with self.client.post(
+            url=self.url,
+            data=self.data,
+            headers=self.headers,
+            catch_response=True
+        ) as response:
+            if response.status_code != 200:
+                response.failure(f"Request failed with status code {response.status_code}")
+            else:
+                logging.info(f"response info = {response.json()}")
+                response.success()
 
 
 @events.init_command_line_parser.add_listener
