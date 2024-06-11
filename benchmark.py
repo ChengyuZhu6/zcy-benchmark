@@ -22,13 +22,7 @@ def json_provider(file_path, cmd_name):
 @click.option(
     "--concurrency", "-c", default=10, help="Number of concurrent requests to run"
 )
-@click.option("--requests", "-r", default=100, help="Number of requests")
-@click.option(
-    "--run_time",
-    "-rt",
-    default=-1,
-    help=f"run time.",
-)
+@click.option("--requests", "-r", default=0, help="Number of requests")
 @click.option(
     "--input",
     "-i",
@@ -71,10 +65,28 @@ def json_provider(file_path, cmd_name):
     help=f"Benchmark backend to use.",
 )
 @click.option(
+    "--output_length",
+    "-ol",
+    default=128,
+    help=f"the length of output tokens.",
+)
+@click.option(
+    "--average_token_latency",
+    "-atl",
+    default=120,
+    help=f"the average latency of generating token (ms).",
+)
+@click.option(
     "--custom_header",
     "-ch",
     default="",
     help=f"Custom header to a request.",
+)
+@click.option(
+    "--run_time",
+    "-rt",
+    default="60s",
+    help=f"run time.",
 )
 @click_config_file.configuration_option(
     provider=json_provider, implicit=False, help="Read configuration from a JSON file"
@@ -94,7 +106,7 @@ def benchmark(test_plan, **input_params):
 
     benchmark.prepare_environment()
 
-    benchmark.warm_up()
+    # benchmark.warm_up()
     benchmark.run()
 
     click.secho("Bench Execution completed.", fg="green")

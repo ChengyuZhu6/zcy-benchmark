@@ -103,14 +103,20 @@ class LocustBenchmark(Benchmark):
     def run(self):
         locust_cmd = (
             f"locust  -H {self.execution_params['url']} --locustfile {self.locust_benchmark_file} "
-            f"--headless --reset-stats --users {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} -i {self.execution_params['requests']} "
+            f"--headless --reset-stats --users {self.execution_params['concurrency']} -r {self.execution_params['concurrency']} "
             f"--input {self.execution_params['tmp_dir']}/benchmark/input --content-type  {self.execution_params['content_type']} "
             f"--model-url {self.execution_params['inference_model_url']} --custom-header {self.execution_params['custom_header']} --logfile {self.execution_params['output_log']} "
-            f"--json > {self.execution_params['result_file']}"
         )
+        if self.execution_params['requests'] != 0:
+            locust_cmd += f"-i {self.execution_params['requests']} "
+        else:
+            locust_cmd += f"--run-time {self.execution_params['run_time']} "
+        
+        locust_cmd += f"--json > {self.execution_params['result_file']}"
+
         click.secho("\n\nExecuting inference performance tests ...", fg="green")
 
         execute(locust_cmd, wait=True)
 
     def _extract_benchmark_artifacts(self):
-        return extract_locust_tool_benchmark_artifacts(self.execution_params)
+        return extract_locust_tool_benchmark_artifacts(self.execution_params, "e2e.txt")

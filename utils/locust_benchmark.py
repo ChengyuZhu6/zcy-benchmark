@@ -5,7 +5,7 @@ from locust import FastHttpUser, events, task ,between
 class MyUser(FastHttpUser):
     network_timeout = 500.0  # Timeout for the network operations, in seconds
     connection_timeout = 500.0  # Timeout for establishing a connection, in seconds
-    pool_size = 50
+    pool_size = 30
     pool = None
     url = ""
     headers = {}

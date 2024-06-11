@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import re
+import math
 
 import click
 import matplotlib.pyplot as plt
@@ -18,43 +19,13 @@ def extract_metrics(execution_params, warm_up_lines):
     lines = lines[warm_up_lines:]
 
     metrics = {
-        "predict.txt": "PredictionTime",
-        "handler_time.txt": "HandlerTime",
-        "waiting_time.txt": "QueueTime",
-        "worker_thread.txt": "WorkerThreadTime",
-        "cpu_percentage.txt": "CPUUtilization",
-        "memory_percentage.txt": "MemoryUtilization",
-        "gpu_percentage.txt": "GPUUtilization",
-        "gpu_memory_percentage.txt": "GPUMemoryUtilization",
-        "gpu_memory_used.txt": "GPUMemoryUsed",
+        execution_params["result_file"]: "e2e.txt",
+        execution_params["output_log"]: "inference.txt",
     }
-
-    update_metrics(execution_params, metrics)
-
-    for k, v in metrics.items():
-        all_lines = []
-        pattern = re.compile(v)
-        for line in lines:
-            if pattern.search(line):
-                all_lines.append(line.split("|")[0].split(":")[3].strip())
-
-        out_fname = os.path.join(*(execution_params["tmp_dir"], "benchmark", k))
-        click.secho(f"\nWriting extracted {v} metrics to {out_fname} ", fg="green")
-        with open(out_fname, "w") as outf:
-            all_lines = map(lambda x: x + "\n", all_lines)
-            outf.writelines(all_lines)
+    
+    all_lines = extract_inference_benchmark_artifacts(execution_params, "inference.txt")
 
     return metrics
-
-
-def update_metrics(execution_params, metrics):
-    if "handler_profiling" in execution_params and execution_params["handler_profiling"]:
-        opt_metrics = {
-            "handler_preprocess.txt": "ts_handler_preprocess",
-            "handler_inference.txt": "ts_handler_inference",
-            "handler_postprocess.txt": "ts_handler_postprocess",
-        }
-        metrics.update(opt_metrics)
 
 
 def generate_csv_output(execution_params, metrics, artifacts):
@@ -67,7 +38,7 @@ def generate_csv_output(execution_params, metrics, artifacts):
     click.secho(f"Saving benchmark results to {execution_params['report_location']}")
 
     with open(
-        os.path.join(execution_params["report_location"], "benchmark", "ab_report.csv"),
+        os.path.join(execution_params["report_location"], "benchmark", "benchmark_report.csv"),
         "w",
     ) as csv_file:
         csvwriter = csv.writer(csv_file)
@@ -77,22 +48,76 @@ def generate_csv_output(execution_params, metrics, artifacts):
     return artifacts
 
 
-def extract_locust_tool_benchmark_artifacts(execution_params):
+def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     with open(execution_params["result_file"], "r") as f:
         data = json.load(f)[0]
 
     response_hist = dict(sorted(data["response_times"].items()))
     keys = [float(k) for k in response_hist.keys()]
     values = [v for v in response_hist.values()]
+    all_lines = []
     artifacts = {"Benchmark": "Locust"}
-    artifacts["TS failed requests"] = data["num_failures"]
-    artifacts["TS throughput"] = data["num_requests"] / max(
+    all_lines.append(f"Request numbers: {data['num_requests']}")
+    artifacts["Failed requests"] = data["num_failures"]
+    all_lines.append(f"Failed requests: {artifacts['Failed requests']}")
+    artifacts["Run time"] = data["total_response_time"] / 1000
+    all_lines.append(f"Run time: {artifacts['Run time']}s")
+    artifacts["Throughput"] = data["num_requests"] / max(
         data["last_request_timestamp"] - data["start_time"], 0.1
     )
-    artifacts["TS latency mean"] = np.multiply(keys, values).sum() / np.sum(values)
-    artifacts["TS error rate"] = data["num_failures"] / data["num_requests"] * 100
-
+    all_lines.append(f"throughput: {artifacts['Throughput']}")
+    artifacts["Latency mean"] = np.multiply(keys, values).sum() / np.sum(values)
+    all_lines.append(f"Latency mean: {artifacts['Latency mean']}")
+    artifacts["Error rate"] = data["num_failures"] / data["num_requests"] * 100
+    all_lines.append(f"Error rate: {artifacts['Error rate']}")
+    
+    meet_count = 0
+    baseline_latency = execution_params['output_length'] * execution_params['average_token_latency']
+    print(f"response_hist = {response_hist}")
+    for k,v in response_hist.items():
+        print(f"k = {k}; v = {v}")
+        if int(k) < baseline_latency:
+            print(k)
+            meet_count = meet_count + v
+    all_lines.append(f"Meet Count: {meet_count}")
+    out_fname = os.path.join(*(execution_params["tmp_dir"], "benchmark", output_file))
+    click.secho(f"\nWriting to {out_fname} ", fg="green")
+    with open(out_fname, "w") as outf:
+        all_lines = map(lambda x: x + "\n", all_lines)
+        outf.writelines(all_lines)
     return artifacts
+
+def extract_inference_benchmark_artifacts(execution_params, output_file):
+    latencies = []
+    latency_pattern = re.compile(r"'Latency': ([\d\.]+)")
+    output_length = execution_params['output_length']
+    baseline_latency = float(execution_params['output_length'] * execution_params['average_token_latency']) / 1000
+    print(f"baseline_latency: {baseline_latency}")
+    meet_count = 0
+    with open(execution_params['output_log'], "r") as file:
+        for line in file:
+            match = latency_pattern.search(line)
+            if match:
+                latency = float(match.group(1))
+                if math.isclose(latency, baseline_latency) or (latency < baseline_latency):
+                    print(f"latency: {latency}")
+                    meet_count = meet_count + 1
+                latencies.append(latency)
+
+    if latencies:
+        all_lines = []
+        average_latency = sum(latencies) / len(latencies)
+        print(f"Average Latency: {average_latency}")
+        all_lines.append(f"Average Latency: {average_latency}s")
+        all_lines.append(f"Inference Count: {len(latencies)}")
+        all_lines.append(f"Meet Count: {meet_count}")
+        out_fname = os.path.join(*(execution_params["tmp_dir"], "benchmark", output_file))
+        click.secho(f"\nWriting to {out_fname} ", fg="green")
+        with open(out_fname, "w") as outf:
+            all_lines = map(lambda x: x + "\n", all_lines)
+            outf.writelines(all_lines)
+    else:
+        print("No latency values found in the log file.")
 
 
 def extract_torchserve_artifacts(execution_params, metrics):
