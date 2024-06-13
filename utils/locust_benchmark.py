@@ -30,7 +30,7 @@ class MyUser(FastHttpUser):
             url=self.url,
             data=self.data,
             headers=self.headers,
-            catch_response=True
+            catch_response=True,
         ) as response:
             if response.status_code != 200:
                 response.failure(f"Request failed with status code {response.status_code}")
