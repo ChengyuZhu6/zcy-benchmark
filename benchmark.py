@@ -22,7 +22,7 @@ def json_provider(file_path, cmd_name):
 @click.option(
     "--concurrency", "-c", default=10, help="Number of concurrent requests to run"
 )
-@click.option("--requests", "-r", default=0, help="Number of requests")
+@click.option("--requests", "-r", default=100, help="Number of requests")
 @click.option(
     "--input",
     "-i",
@@ -87,6 +87,12 @@ def json_provider(file_path, cmd_name):
     "-rt",
     default="60s",
     help=f"run time.",
+)
+@click.option(
+    "--requests",
+    "-r",
+    default=0,
+    help=f"requests",
 )
 @click_config_file.configuration_option(
     provider=json_provider, implicit=False, help="Read configuration from a JSON file"

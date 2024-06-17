@@ -60,8 +60,11 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     all_lines.append(f"Request numbers: {data['num_requests']}")
     artifacts["Failed requests"] = data["num_failures"]
     all_lines.append(f"Failed requests: {artifacts['Failed requests']}")
-    artifacts["Run time"] = data["total_response_time"] / 1000
-    all_lines.append(f"Run time: {artifacts['Run time']}s")
+    artifacts["Total response time"] = data["total_response_time"] if execution_params["requests"] != 0 else execution_params['run_time']
+    all_lines.append(f"Total response time: {artifacts['Total response time']}")
+    artifacts["Run time"] = data["last_request_timestamp"] - data["start_time"]
+    all_lines.append(f"Run time: {artifacts['Run time']}")
+    
     artifacts["Throughput"] = data["num_requests"] / max(
         data["last_request_timestamp"] - data["start_time"], 0.1
     )
@@ -89,7 +92,7 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
 
 def extract_inference_benchmark_artifacts(execution_params, output_file):
     latencies = []
-    latency_pattern = re.compile(r"'Latency': ([\d\.]+)")
+    latency_pattern = re.compile(r"Latency: ([\d\.]+) s")
     output_length = execution_params['output_length']
     baseline_latency = float(execution_params['output_length'] * execution_params['average_token_latency']) / 1000
     print(f"baseline_latency: {baseline_latency}")
