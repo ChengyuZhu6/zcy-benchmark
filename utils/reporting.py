@@ -60,8 +60,8 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     all_lines.append(f"Request numbers: {data['num_requests']}")
     artifacts["Failed requests"] = data["num_failures"]
     all_lines.append(f"Failed requests: {artifacts['Failed requests']}")
-    artifacts["Total response time"] = data["total_response_time"] if execution_params["requests"] != 0 else execution_params['run_time']
-    all_lines.append(f"Total response time: {artifacts['Total response time']}")
+    artifacts["Duration time"] = data["last_request_timestamp"] - data["start_time"] if execution_params["requests"] != 0 else execution_params['run_time']
+    all_lines.append(f"Duration time: {artifacts['Duration time']}")
     artifacts["Run time"] = data["last_request_timestamp"] - data["start_time"]
     all_lines.append(f"Run time: {artifacts['Run time']}")
     
@@ -76,11 +76,8 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     
     meet_count = 0
     baseline_latency = execution_params['output_length'] * execution_params['average_token_latency']
-    print(f"response_hist = {response_hist}")
     for k,v in response_hist.items():
-        print(f"k = {k}; v = {v}")
         if int(k) < baseline_latency:
-            print(k)
             meet_count = meet_count + v
     all_lines.append(f"Meet Count: {meet_count}")
     out_fname = os.path.join(*(execution_params["tmp_dir"], "benchmark", output_file))
@@ -91,36 +88,35 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     return artifacts
 
 def extract_inference_benchmark_artifacts(execution_params, output_file):
-    latencies = []
-    latency_pattern = re.compile(r"Latency: ([\d\.]+) s")
-    output_length = execution_params['output_length']
+    patterns = ["'Latency'", "E2ELatency"]
     baseline_latency = float(execution_params['output_length'] * execution_params['average_token_latency']) / 1000
-    print(f"baseline_latency: {baseline_latency}")
-    meet_count = 0
+    all_latencies = {pattern: [] for pattern in patterns}
+    meet_counts = {pattern: 0 for pattern in patterns}
     with open(execution_params['output_log'], "r") as file:
         for line in file:
-            match = latency_pattern.search(line)
-            if match:
-                latency = float(match.group(1))
-                if math.isclose(latency, baseline_latency) or (latency < baseline_latency):
-                    print(f"latency: {latency}")
-                    meet_count = meet_count + 1
-                latencies.append(latency)
+            for pattern in patterns:
+                match = re.search(rf"{pattern}: (\d+\.\d+)", line)
+                if match:
+                    latency = float(match.group(1))
+                    if math.isclose(latency, baseline_latency) or (latency < baseline_latency):
+                        meet_counts[pattern] += 1
+                    all_latencies[pattern].append(latency)
 
-    if latencies:
-        all_lines = []
-        average_latency = sum(latencies) / len(latencies)
-        print(f"Average Latency: {average_latency}")
-        all_lines.append(f"Average Latency: {average_latency}s")
-        all_lines.append(f"Inference Count: {len(latencies)}")
-        all_lines.append(f"Meet Count: {meet_count}")
-        out_fname = os.path.join(*(execution_params["tmp_dir"], "benchmark", output_file))
-        click.secho(f"\nWriting to {out_fname} ", fg="green")
-        with open(out_fname, "w") as outf:
-            all_lines = map(lambda x: x + "\n", all_lines)
-            outf.writelines(all_lines)
-    else:
-        print("No latency values found in the log file.")
+    out_fname = os.path.join(execution_params["tmp_dir"], "benchmark", output_file)
+    with open(out_fname, "w") as outf:
+        for pattern in patterns:
+            latencies = all_latencies[pattern]
+            if latencies:
+                average_latency = sum(latencies) / len(latencies)
+                all_lines = [
+                    f"{pattern} Average latency(s): {average_latency}",
+                    f"{pattern} Total inference time(s): {sum(latencies)/execution_params['batch_size']}",
+                    f"{pattern} Request Count: {len(latencies)}",
+                    f"{pattern} Meet Count: {meet_counts[pattern]}",
+                ]
+                outf.writelines(map(lambda x: x + "\n", all_lines))
+            else:
+                print(f"No latency values found for {pattern} in the log file.")
 
 
 def extract_torchserve_artifacts(execution_params, metrics):

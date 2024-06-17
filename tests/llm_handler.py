@@ -63,6 +63,7 @@ class LlmClassifier(BaseHandler):
 
     def preprocess(self, requests):
         questions = []
+        max_new_token_length = self.max_new_tokens
         logger.info("Preprocess start, requests:")
         logger.info(f"requests size = {len(requests)}")
         for _, req in enumerate(requests):
@@ -79,18 +80,25 @@ class LlmClassifier(BaseHandler):
             for _, row in enumerate(req_inputs):
                 question = row.get("text")
                 questions.append(question)
+                max_new_token_len = row.get("max_new_tokens")
+                if max_new_token_len != None:
+                    max_new_token_length = max_new_token_len
 
         logger.info("llm preprocess done")
-        return questions
+        return {
+            "prompts": questions,
+            "max_new_tokens": max_new_token_length,
+        }
 
     def inference(self, inputs):
-        prompts = inputs
+        max_new_token_length = inputs["max_new_tokens"]
+        prompts = inputs["prompts"]
         generate_kwargs = dict(
             do_sample=False,
             temperature=0.9,
             num_beams=self.num_beams,
-            max_new_tokens=self.max_new_tokens,
-            min_new_tokens=self.max_new_tokens,
+            max_new_tokens=max_new_token_length,
+            min_new_tokens=max_new_token_length,
             streamer=self.streamer,
         )
 
@@ -102,8 +110,12 @@ class LlmClassifier(BaseHandler):
 
             outputs = self.model.generate(input_ids, **generate_kwargs)
             logging.info(f"Output length/shape: {outputs.shape}")
-
-            gen_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            logging.info(f"Outputs: {outputs}")
+            
+            truncated_outputs = outputs[:, -max_new_token_length:]
+            logging.info(f"truncated_outputs length/shape: {truncated_outputs.shape}")
+            logging.info(f"truncated_outputs: {truncated_outputs}")            
+            gen_texts = self.tokenizer.batch_decode(truncated_outputs, skip_special_tokens=True)
             toc = time.time()
 
             total_time = toc - tic
@@ -119,5 +131,6 @@ class LlmClassifier(BaseHandler):
         outputs = data["Output"]
         latency = data["Latency"]
         response_list = [{"Output": output, "Latency": latency} for output in outputs]
+        # response_list = [{"Output": output} for output in outputs]
         logger.info(f"Postprocess: generated {len(response_list)} responses")
         return response_list

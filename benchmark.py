@@ -94,6 +94,12 @@ def json_provider(file_path, cmd_name):
     default=0,
     help=f"requests",
 )
+@click.option(
+    "--batch_size",
+    "-bs",
+    default=1,
+    help=f"batch size",
+)
 @click_config_file.configuration_option(
     provider=json_provider, implicit=False, help="Read configuration from a JSON file"
 )

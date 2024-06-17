@@ -1,6 +1,7 @@
 import logging
 import gevent.pool
 from locust import FastHttpUser, events, task ,between
+import time
 
 class MyUser(FastHttpUser):
     network_timeout = 500.0  # Timeout for the network operations, in seconds
@@ -24,8 +25,9 @@ class MyUser(FastHttpUser):
     def my_task(self):
         self.pool.spawn(self.concurrent_request)
         self.pool.join()
-
+        
     def concurrent_request(self):
+        tic = time.time()
         with self.client.post(
             url=self.url,
             data=self.data,
@@ -35,9 +37,12 @@ class MyUser(FastHttpUser):
             if response.status_code != 200:
                 response.failure(f"Request failed with status code {response.status_code}")
             else:
+                toc = time.time()
+                total_time = toc - tic
+                logging.info("E2ELatency: %.3f", total_time)
                 logging.info(f"response info = {response.json()}")
+                logging.info(f"Timestamp: {toc}")
                 response.success()
-
 
 @events.init_command_line_parser.add_listener
 def init_parser(parser):
