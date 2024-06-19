@@ -1,6 +1,8 @@
 import logging
 import gevent.pool
 from locust import FastHttpUser, events, task ,between
+import json
+import random
 import time
 
 class MyUser(FastHttpUser):
@@ -10,10 +12,18 @@ class MyUser(FastHttpUser):
     pool = None
     url = ""
     headers = {}
-
+    file_data = ""
+    input_data = ""
+    
     def on_start(self):
-        with open(self.environment.parsed_options.input, "rb") as f:
-            self.data = f.read()
+        with open(self.environment.parsed_options.input, "r", encoding="utf-8") as f:
+            self.file_data = json.load(f)
+        self.input_data = [
+            conv['value']
+            for item in self.file_data
+            for conv in item['conversations']
+            if conv['from'] == 'human'
+        ]
         self.pool = gevent.pool.Pool(self.pool_size)
         self.url = f"{self.environment.parsed_options.host}/{self.environment.parsed_options.model_url}"
         self.headers = {
@@ -28,9 +38,18 @@ class MyUser(FastHttpUser):
         
     def concurrent_request(self):
         tic = time.time()
+        random_input = random.choice(self.input_data)
+        new_data = {
+            "instances": [
+                {
+                    "text": random_input,
+                    "max_new_tokens": len(random_input)
+                }
+            ]
+        }
         with self.client.post(
             url=self.url,
-            data=self.data,
+            data=json.dumps(new_data, indent=4),
             headers=self.headers,
             catch_response=True,
         ) as response:
