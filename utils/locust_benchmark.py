@@ -57,10 +57,9 @@ class MyUser(FastHttpUser):
                 response.failure(f"Request failed with status code {response.status_code}")
             else:
                 toc = time.time()
-                total_time = toc - tic
-                logging.info("E2ELatency: %.3f", total_time)
+                logging.info(f"E2E start timestamp: {tic}")
                 logging.info(f"response info = {response.json()}")
-                logging.info(f"Timestamp: {toc}")
+                logging.info(f"E2E end timestamp: {toc}")
                 response.success()
 
 @events.init_command_line_parser.add_listener

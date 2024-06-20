@@ -3,7 +3,7 @@ import json
 import os
 import re
 import math
-
+import sys
 import click
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,23 +22,21 @@ def extract_metrics(execution_params, warm_up_lines):
         execution_params["result_file"]: "e2e.txt",
         execution_params["output_log"]: "inference.txt",
     }
-    
-    all_lines = extract_inference_benchmark_artifacts(execution_params, "inference.txt")
 
-    return metrics
+    artifacts = extract_inference_benchmark_artifacts(execution_params, "inference.txt")
+
+    return artifacts
 
 
-def generate_csv_output(execution_params, metrics, artifacts):
+def generate_csv_output(execution_params, artifacts):
     click.secho("*Generating CSV output...", fg="green")
-
-    # torchserve_artifacts = extract_torchserve_artifacts(execution_params, metrics)
-
-    # artifacts.update(torchserve_artifacts)
 
     click.secho(f"Saving benchmark results to {execution_params['report_location']}")
 
     with open(
-        os.path.join(execution_params["report_location"], "benchmark", "benchmark_report.csv"),
+        os.path.join(
+            execution_params["report_location"], "benchmark", "benchmark_report.csv"
+        ),
         "w",
     ) as csv_file:
         csvwriter = csv.writer(csv_file)
@@ -60,11 +58,15 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     all_lines.append(f"Request numbers: {data['num_requests']}")
     artifacts["Failed requests"] = data["num_failures"]
     all_lines.append(f"Failed requests: {artifacts['Failed requests']}")
-    artifacts["Duration time"] = data["last_request_timestamp"] - data["start_time"] if execution_params["requests"] != 0 else execution_params['run_time']
+    artifacts["Duration time"] = (
+        data["last_request_timestamp"] - data["start_time"]
+        if execution_params["requests"] != 0
+        else execution_params["run_time"]
+    )
     all_lines.append(f"Duration time: {artifacts['Duration time']}")
     artifacts["Run time"] = data["last_request_timestamp"] - data["start_time"]
     all_lines.append(f"Run time: {artifacts['Run time']}")
-    
+
     artifacts["Throughput"] = data["num_requests"] / max(
         data["last_request_timestamp"] - data["start_time"], 0.1
     )
@@ -73,10 +75,12 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
     all_lines.append(f"Latency mean: {artifacts['Latency mean']}")
     artifacts["Error rate"] = data["num_failures"] / data["num_requests"] * 100
     all_lines.append(f"Error rate: {artifacts['Error rate']}")
-    
+
     meet_count = 0
-    baseline_latency = execution_params['output_length'] * execution_params['average_token_latency']
-    for k,v in response_hist.items():
+    baseline_latency = (
+        execution_params["output_length"] * execution_params["average_token_latency"]
+    )
+    for k, v in response_hist.items():
         if int(k) < baseline_latency:
             meet_count = meet_count + v
     all_lines.append(f"Meet Count: {meet_count}")
@@ -87,38 +91,75 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
         outf.writelines(all_lines)
     return artifacts
 
+
 def extract_inference_benchmark_artifacts(execution_params, output_file):
-    patterns = ["'Latency'", "E2ELatency"]
-    baseline_latency = float(execution_params['output_length'] * execution_params['average_token_latency']) / 1000
-    all_latencies = {pattern: [] for pattern in patterns}
-    meet_counts = {pattern: 0 for pattern in patterns}
-    with open(execution_params['output_log'], "r") as file:
+    e2e_timestamp_patterns = ["E2E start timestamp", "E2E end timestamp"]
+    patterns = ["'Latency'"] + [pattern for pattern in e2e_timestamp_patterns]
+    target_patterns = ["'Latency'", "E2E"]
+    baseline_latency = (
+        float(
+            execution_params["output_length"]
+            * execution_params["average_token_latency"]
+        )
+        / 1000
+    )
+    all_latencies = {pattern: [] for pattern in target_patterns}
+    meet_counts = {pattern: 0 for pattern in target_patterns}
+    e2e_timestamps = {pattern: [] for pattern in e2e_timestamp_patterns}
+    min_start = sys.float_info.max
+    max_end = sys.float_info.min
+    artifacts = {"Benchmark": "Locust"}
+    all_lines = []
+    with open(execution_params["output_log"], "r") as file:
         for line in file:
             for pattern in patterns:
                 match = re.search(rf"{pattern}: (\d+\.\d+)", line)
                 if match:
-                    latency = float(match.group(1))
-                    if math.isclose(latency, baseline_latency) or (latency < baseline_latency):
-                        meet_counts[pattern] += 1
-                    all_latencies[pattern].append(latency)
+                    if pattern == "'Latency'":
+                        latency = float(match.group(1))
+                        if math.isclose(latency, baseline_latency) or (
+                            latency < baseline_latency
+                        ):
+                            meet_counts[pattern] += 1
+                        all_latencies[pattern].append(latency)
+                    else:
+                        timestamp = float(match.group(1))
+                        e2e_timestamps[pattern].append(timestamp)
+
+    for start, end in zip(e2e_timestamps["E2E start timestamp"], e2e_timestamps["E2E end timestamp"]):
+        if min_start > start:
+            min_start = start
+        if max_end < end:
+            max_end = end
+        latency = float(end - start)
+        if math.isclose(latency, baseline_latency) or (latency < baseline_latency):
+            meet_counts["E2E"] += 1
+        all_latencies["E2E"].append(latency)
 
     out_fname = os.path.join(execution_params["tmp_dir"], "benchmark", output_file)
     with open(out_fname, "w") as outf:
-        for pattern in patterns:
+        for pattern in target_patterns:
             latencies = all_latencies[pattern]
             if latencies:
                 average_latency = sum(latencies) / len(latencies)
-                all_lines = [
-                    f"{pattern} Average latency(s): {average_latency}",
-                    f"{pattern} Total inference time(s): {sum(latencies)/execution_params['batch_size']}",
-                    f"{pattern} Request Count: {len(latencies)}",
-                    f"{pattern} Meet Count: {meet_counts[pattern]}",
-                ]
-                outf.writelines(map(lambda x: x + "\n", all_lines))
+                artifacts[f"{pattern} Average latency(s)"] = average_latency
+                all_lines.append(f"{pattern} Average latency(s): {artifacts[pattern + ' Average latency(s)']}")
+                if pattern == "'Latency'":
+                    artifacts[f"{pattern} Total inference time(s)"] = sum(latencies)/execution_params['batch_size']
+                else:
+                    artifacts[f"{pattern} Total inference time(s)"] = max_end - min_start
+                all_lines.append(f"{pattern} Total inference time(s): {artifacts[pattern + ' Total inference time(s)']}")
+                artifacts[f"{pattern} Request Count"] = len(latencies)
+                all_lines.append(f"{pattern} Request Count: {artifacts[pattern + ' Request Count']}")
+                artifacts[f"{pattern} Meet Count"] = meet_counts[pattern]
+                all_lines.append(f"{pattern} Meet Count: {artifacts[pattern + ' Meet Count']}")
+                artifacts[f"{pattern} RPS"] = len(latencies) / artifacts[f"{pattern} Total inference time(s)"]
+                all_lines.append(f"{pattern} RPS: {artifacts[pattern + ' RPS']}")
             else:
                 print(f"No latency values found for {pattern} in the log file.")
-
-
+        outf.writelines(map(lambda x: x + "\n", all_lines))
+    return artifacts
+    
 def extract_torchserve_artifacts(execution_params, metrics):
     batched_requests = execution_params["requests"] / execution_params["batch_size"]
     line50 = int(batched_requests / 2)

@@ -131,6 +131,5 @@ class LlmClassifier(BaseHandler):
         outputs = data["Output"]
         latency = data["Latency"]
         response_list = [{"Output": output, "Latency": latency} for output in outputs]
-        # response_list = [{"Output": output} for output in outputs]
         logger.info(f"Postprocess: generated {len(response_list)} responses")
         return response_list

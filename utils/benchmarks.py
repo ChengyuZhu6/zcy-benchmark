@@ -36,18 +36,17 @@ class Benchmark(ABC):
 
     def generate_report(self):
         click.secho("\n\nGenerating Reports...", fg="green")
-        metrics = extract_metrics(
+        metrics_artifacts = extract_metrics(
             self.execution_params, warm_up_lines=self.warm_up_lines
         )
 
-        artifacts = {}
+        artifacts = metrics_artifacts
         benchmark_artifacts = self._extract_benchmark_artifacts()
         artifacts.update(benchmark_artifacts)
 
-        generate_csv_output(self.execution_params, metrics, benchmark_artifacts)
+        generate_csv_output(self.execution_params, artifacts)
         if self.execution_params["generate_graphs"]:
             generate_latency_graph(self.execution_params)
-            generate_profile_graph(self.execution_params, metrics)
 
     def prepare_environment(self):
         input = self.execution_params["input"]
