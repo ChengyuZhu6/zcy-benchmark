@@ -1,0 +1,2 @@
+
+python benchmark.py -u http://172.21.10.199 -c 10 --run_time "300s" -i ./input.json -ic application/json -imu v1/models/llama2-7b-ipex:predict -rl ./report -td ./48vcpus-8instances-input1024-output128-batch6-worker1-disable_cache -bb locust -ch llama2inferenceserving.default.svc.cluster.local --output_length 128 --average_token_latency 120 --batch_size 6
