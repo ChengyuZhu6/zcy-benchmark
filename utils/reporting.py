@@ -94,7 +94,7 @@ def extract_locust_tool_benchmark_artifacts(execution_params, output_file):
 
 def extract_inference_benchmark_artifacts(execution_params, output_file):
     e2e_timestamp_patterns = ["E2E start timestamp", "E2E end timestamp"]
-    patterns = ["'Latency'"] + [pattern for pattern in e2e_timestamp_patterns]
+    patterns = ["'Latency'"] + [pattern for pattern in e2e_timestamp_patterns] + ["input_tokens"]
     target_patterns = ["'Latency'", "E2E"]
     baseline_latency = (
         float(
@@ -110,21 +110,27 @@ def extract_inference_benchmark_artifacts(execution_params, output_file):
     max_end = sys.float_info.min
     artifacts = {"Benchmark": "Locust"}
     all_lines = []
+    input_tokens = []
     with open(execution_params["output_log"], "r") as file:
         for line in file:
             for pattern in patterns:
-                match = re.search(rf"{pattern}: (\d+\.\d+)", line)
-                if match:
-                    if pattern == "'Latency'":
-                        latency = float(match.group(1))
-                        if math.isclose(latency, baseline_latency) or (
-                            latency < baseline_latency
-                        ):
-                            meet_counts[pattern] += 1
-                        all_latencies[pattern].append(latency)
-                    else:
-                        timestamp = float(match.group(1))
-                        e2e_timestamps[pattern].append(timestamp)
+                if pattern == "input_tokens":
+                    match = re.search(rf"{pattern}: (\d+)", line)
+                    if match:
+                        input_tokens.append(int(match.group(1)))
+                else:
+                    match = re.search(rf"{pattern}: (\d+\.\d+)", line)
+                    if match:
+                        if pattern == "'Latency'":
+                            latency = float(match.group(1))
+                            if math.isclose(latency, baseline_latency) or (
+                                latency < baseline_latency
+                            ):
+                                meet_counts[pattern] += 1
+                            all_latencies[pattern].append(latency)
+                        else:
+                            timestamp = float(match.group(1))
+                            e2e_timestamps[pattern].append(timestamp)
 
     for start, end in zip(e2e_timestamps["E2E start timestamp"], e2e_timestamps["E2E end timestamp"]):
         if min_start > start:
@@ -157,6 +163,10 @@ def extract_inference_benchmark_artifacts(execution_params, output_file):
                 all_lines.append(f"{pattern} RPS: {artifacts[pattern + ' RPS']}")
             else:
                 print(f"No latency values found for {pattern} in the log file.")
+                
+        average_input_tokens = sum(input_tokens) / len(input_tokens)
+        artifacts[f"input_tokens"] = average_input_tokens
+        all_lines.append(f"\ninput_tokens: {average_input_tokens}")
         outf.writelines(map(lambda x: x + "\n", all_lines))
     return artifacts
     
