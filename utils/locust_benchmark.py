@@ -4,6 +4,7 @@ from locust import FastHttpUser, events, task ,between
 import json
 import random
 import time
+from transformers import LlamaTokenizer
 
 class MyUser(FastHttpUser):
     network_timeout = 500.0  # Timeout for the network operations, in seconds
@@ -14,16 +15,10 @@ class MyUser(FastHttpUser):
     headers = {}
     file_data = ""
     input_data = ""
-    
+    model_path = "/media/shared_folder/AIGC-PVC/pvc-91cd0f04-8188-4e39-876e-e9133af61d2f/model-space/Llama-2-7b-hf/"    
     def on_start(self):
         with open(self.environment.parsed_options.input, "r", encoding="utf-8") as f:
-            self.file_data = json.load(f)
-        self.input_data = [
-            conv['value']
-            for item in self.file_data
-            for conv in item['conversations']
-            if conv['from'] == 'human'
-        ]
+            self.input_data = json.load(f)
         self.pool = gevent.pool.Pool(self.pool_size)
         self.url = f"{self.environment.parsed_options.host}/{self.environment.parsed_options.model_url}"
         self.headers = {
@@ -37,13 +32,16 @@ class MyUser(FastHttpUser):
         self.pool.join()
         
     def concurrent_request(self):
-        tic = time.time()
         random_input = random.choice(self.input_data)
+        
+        logging.info(f'new_data len: {random_input["input_tokens"]}')
+        tic = time.time()
         new_data = {
             "instances": [
                 {
-                    "text": random_input,
-                    "max_new_tokens": len(random_input)
+                    "text": random_input['text'],
+                    "max_tokens": random_input['output_tokens'],
+                    "min_tokens": random_input['output_tokens'],
                 }
             ]
         }
@@ -57,6 +55,7 @@ class MyUser(FastHttpUser):
                 response.failure(f"Request failed with status code {response.status_code}")
             else:
                 toc = time.time()
+                logging.info(f'input_tokens: {random_input["input_tokens"]}')
                 logging.info(f"E2E start timestamp: {tic}")
                 logging.info(f"response info = {response.json()}")
                 logging.info(f"E2E end timestamp: {toc}")
