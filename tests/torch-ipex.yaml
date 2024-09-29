@@ -1,0 +1,40 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ClusterServingRuntime
+metadata:
+  name: kserve-torchserve-ipex
+spec:
+  annotations:
+    prometheus.kserve.io/path: /metrics
+    prometheus.kserve.io/port: "8082"
+  containers:
+  - args:
+    - torchserve
+    - --start
+    - --model-store=/mnt/models/model-store
+    - --ts-config=/mnt/models/config/config.properties
+#    - /usr/bin/bash
+#    - -c
+#    - --
+#    - "while true; do sleep 30; done;"
+    env:
+    - name: TS_SERVICE_ENVELOPE
+      value: '{{.Labels.serviceEnvelope}}'
+    - name: PROTOCOL_VERSION
+      value: v1
+    image: dev.local/ipex_llm2.3:devel 
+      #image: dev.local/visual-ipex:0.1 
+    imagePullPolicy: Never
+    name: kserve-container
+    resources:
+      limits:
+        cpu: "32"
+        memory: 64Gi
+      requests:
+        cpu: "32"
+        memory: 64Gi
+  protocolVersions:
+  - v1
+  supportedModelFormats:
+  - autoSelect: true
+    name: torchserveipex
+    version: "1"
